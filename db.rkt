@@ -2,7 +2,7 @@
 (require db racket/runtime-path)
 (provide
  (contract-out
-  [set-mapping!   (-> path-string? bytes? void?)]
+  [set-mapping!   (-> path-string? bytes? bytes? void?)]
   [lookup (-> path-string? (or/c bytes? #f))])
  in-db)
 
@@ -27,29 +27,34 @@
       (sqlite3-connect #:database db.sqlite #:mode 'create))
     (query-exec
      conn
-     "create table T (file string primary key, bytes string);")
+     "create table Files (file blob primary key, expanded blob, sha blob);")
+    (query-exec
+     conn
+     "create table Dependencies (requires blob, required blob);")
     (disconnect conn)))
 
-(define (set-mapping! filename bytes)
+(define (set-mapping! filename bytes sha)
   ;; start transaction
   (define binding
     (query
      (get-conn)
-     "select bytes from T where file = $1;"
+     "select expanded from Files where file = $1;"
      (path->bytes filename)))
   (cond
     [(null? (rows-result-rows binding))
      (query-exec
       (get-conn)
-      "insert into T(file, bytes) values ($1,$2);"
+      "insert into Files(file, expanded, sha) values ($1,$2,$3);"
       (path->bytes filename)
-      bytes)]
+      bytes
+      sha)]
     [else
      (query-exec
       (get-conn)
-      "update T set file = $1, bytes = $2;"
+      "update Files set file = $1, expanded = $2, sha = $3;"
       (path->bytes filename)
-      bytes)])
+      bytes
+      sha)])
   ;; end transaction
   )
 
@@ -58,7 +63,7 @@
     (rows-result-rows
      (query
       (get-conn)
-      "select bytes from T where file = $1;"
+      "select expanded from Files where file = $1;"
       (path->bytes filename))))
   (cond
     [(null? the-rows) #f]
@@ -76,8 +81,8 @@
   (define tmp1.rkt (build-path "/Users/robby/tmp1.rkt"))
   (define tmp2.rkt (build-path "/Users/robby/tmp2.rkt"))
   (in-db
-   (set-mapping! tmp1.rkt #"abcdef")
+   (set-mapping! tmp1.rkt #"abcdef" #"sha-abcdef")
    (printf "~s\n" (lookup tmp2.rkt))
    (printf "~s\n" (lookup tmp1.rkt))
-   (set-mapping! tmp1.rkt #"abcdefghi")
+   (set-mapping! tmp1.rkt #"abcdefghi" #"sha-abcdefghi")
    (printf "~s\n" (lookup tmp1.rkt))))
