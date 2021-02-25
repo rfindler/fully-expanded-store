@@ -51,14 +51,14 @@
     [else
      (query-exec
       (get-conn)
-      "update Files set file = $1, expanded = $2, sha = $3;"
+      "update Files set expanded = $2, sha = $3 where file = $1;"
       (path->bytes filename)
       bytes
       sha)])
   ;; end transaction
   )
 
-(define(lookup filename)
+(define (lookup filename)
   (define the-rows
     (rows-result-rows
      (query
