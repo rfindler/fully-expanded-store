@@ -2,8 +2,10 @@
 (require db racket/runtime-path)
 (provide
  (contract-out
-  [set-mapping!   (-> path-string? bytes? bytes? void?)]
-  [lookup (-> path-string? (or/c bytes? #f))])
+  [set-mapping! (-> path-string? bytes? bytes? void?)]
+  [lookup (-> path-string? (or/c bytes? #f))]
+  [update-dependencies! (-> path-string? (listof bytes?) void?)]
+  [lookup-deps (-> path-string? (listof bytes?))])
  in-db)
 
 (define-runtime-path db.sqlite "db.sqlite")
@@ -18,7 +20,11 @@
   (define conn #f)
   (dynamic-wind
    (λ () (set! conn (sqlite3-connect #:database db.sqlite)))
-   (λ () (parameterize ([current-conn conn]) (thunk)))
+   (λ () (parameterize ([current-conn conn])
+           ;; start transaction(?)
+           (thunk)
+           ;; end transaction(?)
+           ))
    (λ () (disconnect conn) (set! conn #f))))
 
 (define (initialize-db)
@@ -34,7 +40,6 @@
     (disconnect conn)))
 
 (define (set-mapping! filename bytes sha)
-  ;; start transaction
   (define binding
     (query
      (get-conn)
@@ -55,8 +60,20 @@
       (path->bytes filename)
       bytes
       sha)])
-  ;; end transaction
   )
+
+(define (update-dependencies! path deps)
+  (define path-bytes (path->bytes path))
+  (query-exec
+   (get-conn)
+   "delete from Dependencies where requires = $1;"
+   path-bytes)
+  (for ([dep (in-list deps)])
+    (query-exec
+     (get-conn)
+     "insert into Dependencies(requires, required) values ($1,$2);"
+     path-bytes
+     dep)))
 
 (define (lookup filename)
   (define the-rows
@@ -70,6 +87,16 @@
     [else
      (define the-row (list-ref the-rows 0))
      (vector-ref the-row 0)]))
+
+(define (lookup-deps filename)
+  (define the-rows
+    (rows-result-rows
+     (query
+      (get-conn)
+      "select required from Dependencies where requires = $1;"
+      (path->bytes filename))))
+  (for/list ([a-row (in-list the-rows)])
+    (vector-ref a-row 0)))
 
 (define (get-conn)
   (define conn (current-conn))

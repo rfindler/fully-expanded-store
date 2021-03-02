@@ -1,5 +1,5 @@
 #lang racket
-(require file/sha1 "db.rkt")
+(require file/sha1 "db.rkt" compiler/private/cm-dep)
 (provide make-save-expanded-load/use-compiled-handler)
 
 (define (make-save-expanded-load/use-compiled-handler)
@@ -21,10 +21,16 @@
                          (define compiled-bytes (get-output-bytes bp))
                          (printf "~a: getting sha1\n" filename)
                          (define sha1 (sha1-of-compiled stx old-current-compile))
-                         (printf "~a: storing in db\n" filename)
-                         (in-db (set-mapping! filename compiled-bytes sha1))
                          (printf "~a: recurring\n" filename)
-                         (old-current-compile expanded immediate?)]
+                         (define compiled (old-current-compile expanded immediate?))
+                         (printf "~a: getting dependencies\n" filename)
+                         (define deps (get-deps compiled filename))
+                         (printf "~a: storing in db\n" filename)
+                         (in-db
+                          (set-mapping! filename compiled-bytes sha1)
+                          (update-dependencies! filename deps))
+                         (printf "~a: done\n" filename)
+                         compiled]
                         [else
                          (old-current-compile stx immediate?)]))])
       (old-handler path mod-name)))
@@ -40,4 +46,3 @@
      (write compiled out)
      (close-output-port out)))
   (sha1-bytes in))
-
